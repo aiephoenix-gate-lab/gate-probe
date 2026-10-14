@@ -1,0 +1,14 @@
+name: record
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "RUNNING MAIN STUB DEFINITION ref=$GITHUB_REF"
