@@ -2,13 +2,15 @@ name: doorbell
 on:
   pull_request:
     branches: ['integration/**']
+    types: [opened, synchronize, reopened, closed]
   merge_group:
     branches: ['integration/**']
 permissions:
   actions: write
   contents: read
 jobs:
-  ring:
+  ring-gate:
+    if: github.event_name == 'merge_group' || github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch gate on github-gate
@@ -19,3 +21,15 @@ jobs:
         run: |
           echo "event=$EVENT ref=$GITHUB_REF sha=$SHA"
           gh workflow run gate.yml --repo "$GITHUB_REPOSITORY" --ref github-gate -f sha="$SHA" -f event="$EVENT"
+  ring-record:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch record on github-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          track="${BASE_REF#integration/}"
+          echo "closed and merged into $BASE_REF, workflow ref=$GITHUB_REF sha=$GITHUB_SHA"
+          gh workflow run record.yml --repo "$GITHUB_REPOSITORY" --ref github-gate -f track="$track"
