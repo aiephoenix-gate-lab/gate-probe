@@ -6,7 +6,8 @@ permissions:
   contents: read
   statuses: write
 jobs:
-  gate/track:
+  forge:
+    name: gate/track
     runs-on: ubuntu-latest
     steps:
       - name: Forge a same-named status with the default token
