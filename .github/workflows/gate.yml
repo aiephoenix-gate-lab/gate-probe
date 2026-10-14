@@ -30,6 +30,8 @@ jobs:
         with:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: gate-probe
+          permission-statuses: write
       - name: Report status on target commit as the report identity
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
