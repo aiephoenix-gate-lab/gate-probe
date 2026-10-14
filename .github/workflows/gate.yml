@@ -1,5 +1,4 @@
 name: gate
-run-name: gate ${{ inputs.event }} ${{ inputs.sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -18,7 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: report
     steps:
-      - run: echo "RUNNING GITHUB-GATE DEFINITION ref=$GITHUB_REF event_input=${{ inputs.event }}"
+      - name: Validate doorbell inputs
+        env:
+          SHA: ${{ inputs.sha }}
+          EVENT: ${{ inputs.event }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "rejected: sha is not a full commit id"; exit 1; }
+          case "$EVENT" in pull_request|merge_group|manual) ;; *) echo "rejected: unknown event"; exit 1;; esac
+          echo "RUNNING GITHUB-GATE DEFINITION ref=$GITHUB_REF event_input=$EVENT"
       - name: Secret visibility
         env:
           PROBE_SECRET: ${{ secrets.PROBE_SECRET }}
