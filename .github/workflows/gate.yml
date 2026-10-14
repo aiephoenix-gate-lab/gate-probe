@@ -1,4 +1,5 @@
 name: gate
+run-name: gate ${{ inputs.event }} ${{ inputs.sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -11,8 +12,21 @@ on:
         default: manual
 permissions:
   contents: read
+  statuses: write
 jobs:
-  stub:
+  report:
     runs-on: ubuntu-latest
+    environment: report
     steps:
-      - run: echo "RUNNING MAIN STUB DEFINITION ref=$GITHUB_REF"
+      - run: echo "RUNNING GITHUB-GATE DEFINITION ref=$GITHUB_REF event_input=${{ inputs.event }}"
+      - name: Secret visibility
+        env:
+          PROBE_SECRET: ${{ secrets.PROBE_SECRET }}
+        run: echo "secret_length=${#PROBE_SECRET}"
+      - name: Report status on target commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=gate/track \
+            -f description="reported by github-gate run $GITHUB_RUN_ID"
