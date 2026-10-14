@@ -8,3 +8,5 @@ Branches:
 - `main`: default branch. Holds doorbell workflows and stub files only.
 - `github-gate`: holds the trusted gate workflow definitions.
 - `integration/alpha`: a track branch protected by a merge queue.
+
+Second stable candidate for the empty-note probe.
