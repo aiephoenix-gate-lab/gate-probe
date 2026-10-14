@@ -1,0 +1,113 @@
+name: publish
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit on main to promote to stable
+        required: true
+        type: string
+      name:
+        description: Checkpoint name
+        required: true
+        type: string
+      log_issue:
+        description: Issue that receives the decision comment
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: publish-stable
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    environment: report
+    steps:
+      - name: Validate inputs
+        env:
+          SHA: ${{ inputs.sha }}
+          NAME: ${{ inputs.name }}
+          LOG_ISSUE: ${{ inputs.log_issue }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "rejected: sha"; exit 1; }
+          [[ "$NAME" =~ ^[a-z0-9-]{1,40}$ ]] || { echo "rejected: name"; exit 1; }
+          [[ "$LOG_ISSUE" =~ ^[0-9]{1,6}$ ]] || { echo "rejected: issue"; exit 1; }
+      - name: Require the commit to be on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status)
+          echo "compare $SHA...main: $status"
+          case "$status" in ahead|identical) ;; *) echo "rejected: commit is not on main"; exit 1;; esac
+      - name: Mint report identity token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: gate-probe
+          permission-statuses: write
+      - name: Report gate/stable
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ inputs.sha }}
+        run: gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=gate/stable -f description="stable checks passed, run $GITHUB_RUN_ID"
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - name: Read the confirmation and require a note
+        id: confirm
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > approvals.json
+          jq -c '[.[]|{user:.user.login,state,comment,envs:[.environments[].name]}]' approvals.json
+          approver=$(jq -r '[.[]|select(.state=="approved")|select([.environments[].name]|index("publish"))]|last|.user.login // ""' approvals.json)
+          note=$(jq -r '[.[]|select(.state=="approved")|select([.environments[].name]|index("publish"))]|last|.comment // ""' approvals.json)
+          [ -n "$approver" ] || { echo "rejected: no approval record"; exit 1; }
+          [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ] || { echo "rejected: the confirmation note is empty"; exit 1; }
+          echo "approver=$approver" >> "$GITHUB_OUTPUT"
+          { echo "note<<NOTE_END"; printf '%s\n' "$note"; echo "NOTE_END"; } >> "$GITHUB_OUTPUT"
+      - name: Mint publish identity token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: gate-probe
+          permission-contents: write
+          permission-statuses: write
+          permission-issues: write
+      - name: Report gate/stable-confirm
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ inputs.sha }}
+          APPROVER: ${{ steps.confirm.outputs.approver }}
+        run: gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=gate/stable-confirm -f description="confirmed by $APPROVER, run $GITHUB_RUN_ID"
+      - name: Post the decision comment
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ inputs.sha }}
+          NAME: ${{ inputs.name }}
+          LOG_ISSUE: ${{ inputs.log_issue }}
+          APPROVER: ${{ steps.confirm.outputs.approver }}
+          NOTE: ${{ steps.confirm.outputs.note }}
+        run: |
+          body=$(printf 'Stable promotion decision\n\n- Commit: `%s`\n- Checkpoint: `checkpoint/%s`\n- Confirmed by: @%s (from the platform approval record)\n- Run: %s/%s/actions/runs/%s\n\nConfirmer note:\n\n> %s\n' \
+            "$SHA" "$NAME" "$APPROVER" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$NOTE")
+          gh api "repos/$GITHUB_REPOSITORY/issues/$LOG_ISSUE/comments" -f body="$body" --jq .html_url
+      - name: Fast-forward stable and create the checkpoint tag in one atomic push
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ inputs.sha }}
+          NAME: ${{ inputs.name }}
+        run: |
+          git init -q work && cd work
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "$SHA"
+          git push --atomic origin "$SHA:refs/heads/stable" "$SHA:refs/tags/checkpoint/$NAME"
