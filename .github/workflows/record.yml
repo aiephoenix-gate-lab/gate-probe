@@ -13,10 +13,32 @@ concurrency:
 jobs:
   record:
     runs-on: ubuntu-latest
+    environment: record
     steps:
-      - name: Simulate a record pass
+      - name: Validate inputs
         env:
           TRACK: ${{ inputs.track }}
+        run: '[[ "$TRACK" =~ ^[a-z0-9-]{1,40}$ ]] || { echo "rejected: bad track"; exit 1; }'
+      - name: Mint record identity token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: gate-probe
+          permission-contents: write
+      - name: Sweep the track and create missing units
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          TRACK: ${{ inputs.track }}
+          START: 5d37fe21763e7068ec174e94af2ee475f05a7ae7
         run: |
-          [[ "$TRACK" =~ ^[a-z0-9-]+$ ]] || { echo "rejected: bad track"; exit 1; }
-          echo "RECORD PASS track=$TRACK run=$GITHUB_RUN_ID"; sleep 45
+          git init -q work && cd work
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --filter=blob:none origin "refs/heads/integration/$TRACK:refs/remotes/origin/track" '+refs/tags/unit/*:refs/tags/unit/*'
+          for c in $(git rev-list --first-parent --reverse "$START..origin/track"); do
+            if git tag --points-at "$c" | grep -q '^unit/'; then echo "skip $c: unit exists"; continue; fi
+            reporter=$(gh api "repos/$GITHUB_REPOSITORY/commits/$c/statuses" --jq '[.[]|select(.context=="gate/track" and .state=="success")|.creator.login]|first // ""')
+            if [ "$reporter" != "gate-lab-report[bot]" ]; then echo "gap $c: no gate/track from the report identity"; continue; fi
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/unit/$TRACK-$c" -f sha="$c" --jq '"created " + .ref'
+          done
