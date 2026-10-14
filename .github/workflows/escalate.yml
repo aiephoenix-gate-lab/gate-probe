@@ -1,0 +1,15 @@
+name: escalate
+on:
+  pull_request:
+permissions:
+  contents: write
+jobs:
+  try-write:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Try to push a branch with the default token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/probe/escalated-$GITHUB_RUN_ID" -f sha="$sha" --jq '"created " + .ref' || echo "write denied"
