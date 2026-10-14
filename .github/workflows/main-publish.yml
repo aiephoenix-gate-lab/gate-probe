@@ -1,0 +1,131 @@
+name: main-publish
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request to integrate into main
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: publish-main
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      base: ${{ steps.c.outputs.base }}
+      head: ${{ steps.c.outputs.head }}
+      candidate: ${{ steps.c.outputs.candidate }}
+    steps:
+      - name: Build the candidate on the current main
+        id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          [[ "$PR" =~ ^[0-9]{1,6}$ ]] || { echo "rejected: pr"; exit 1; }
+          base_ref=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .base.ref)
+          [ "$base_ref" = main ] || { echo "rejected: PR base is $base_ref, not main"; exit 1; }
+          head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .head.sha)
+          base=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          git init -q work && cd work
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q origin "$base" "$head"
+          git -c user.name="gate-probe candidate" -c user.email="candidate@gate-probe.invalid" checkout -q --detach "$base"
+          git -c user.name="gate-probe candidate" -c user.email="candidate@gate-probe.invalid" merge -q --no-ff --no-edit -m "Integrate pull request #$PR into main" "$head"
+          candidate=$(git rev-parse HEAD)
+          git push -q --force origin "$candidate:refs/heads/candidate/main-pr-$PR"
+          echo "base=$base head=$head candidate=$candidate"
+          { echo "base=$base"; echo "head=$head"; echo "candidate=$candidate"; } >> "$GITHUB_OUTPUT"
+  report:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: report
+    steps:
+      - name: Mint report identity token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: gate-probe
+          permission-statuses: write
+      - name: Report gate/main on the candidate
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          C: ${{ needs.build.outputs.candidate }}
+        run: gh api "repos/$GITHUB_REPOSITORY/statuses/$C" -f state=success -f context=gate/main -f description="main checks passed, run $GITHUB_RUN_ID"
+  publish:
+    needs: [build, report]
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - name: Read the confirmation and require a note
+        id: confirm
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > approvals.json
+          approver=$(jq -r '[.[]|select(.state=="approved")|select([.environments[].name]|index("publish"))]|last|.user.login // ""' approvals.json)
+          note=$(jq -r '[.[]|select(.state=="approved")|select([.environments[].name]|index("publish"))]|last|.comment // ""' approvals.json)
+          [ -n "$approver" ] || { echo "rejected: no approval record"; exit 1; }
+          [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ] || { echo "rejected: the confirmation note is empty"; exit 1; }
+          echo "approver=$approver" >> "$GITHUB_OUTPUT"
+          { echo "note<<NOTE_END"; printf '%s\n' "$note"; echo "NOTE_END"; } >> "$GITHUB_OUTPUT"
+      - name: Mint publish identity token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: gate-probe
+          permission-contents: write
+          permission-statuses: write
+          permission-pull-requests: write
+          permission-issues: write
+      - name: Verify the candidate without executing it
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          B: ${{ needs.build.outputs.base }}
+          H: ${{ needs.build.outputs.head }}
+          C: ${{ needs.build.outputs.candidate }}
+        run: |
+          for v in "$B" "$H" "$C"; do [[ "$v" =~ ^[0-9a-f]{40}$ ]] || { echo "rejected: bad commit id"; exit 1; }; done
+          git init -q work && cd work
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q origin "$B" "$H" "$C" refs/heads/main:refs/remotes/origin/main
+          [ "$(git rev-parse origin/main)" = "$B" ] || { echo "stopped: main moved since the candidate was built"; exit 1; }
+          [ "$(git rev-list --parents -n1 "$C")" = "$C $B $H" ] || { echo "rejected: candidate parents are not main and the PR head"; exit 1; }
+          [ "$(git merge-tree --write-tree "$B" "$H")" = "$(git rev-parse "$C^{tree}")" ] || { echo "rejected: candidate tree is not the merge of main and the PR head"; exit 1; }
+          echo "candidate verified: parents and tree match"
+      - name: Report gate/main-confirm and post the decision
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          C: ${{ needs.build.outputs.candidate }}
+          PR: ${{ inputs.pr }}
+          APPROVER: ${{ steps.confirm.outputs.approver }}
+          NOTE: ${{ steps.confirm.outputs.note }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$C" -f state=success -f context=gate/main-confirm -f description="confirmed by $APPROVER, run $GITHUB_RUN_ID"
+          body=$(printf 'Main publication decision\n\n- Candidate: `%s`\n- Confirmed by: @%s (from the platform approval record)\n- Run: %s/%s/actions/runs/%s\n\nConfirmer note:\n\n> %s\n' "$C" "$APPROVER" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$NOTE")
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" --jq .html_url
+      - name: Update main and create the unit tag in one atomic push
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          C: ${{ needs.build.outputs.candidate }}
+        run: |
+          cd work
+          git push --atomic origin "$C:refs/heads/main" "$C:refs/tags/unit/main-$GITHUB_RUN_ID"
+      - name: Record the outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ inputs.pr }}
+          OUTCOME: ${{ job.status }}
+        run: gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="Publication outcome: $OUTCOME (run $GITHUB_RUN_ID)" --jq .html_url
