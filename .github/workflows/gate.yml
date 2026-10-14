@@ -39,3 +39,26 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=gate/track \
             -f description="reported by report identity, run $GITHUB_RUN_ID"
+  board:
+    if: inputs.event == 'manual'
+    runs-on: ubuntu-latest
+    environment: report
+    steps:
+      - name: Mint a board-read token for the report identity
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: aiephoenix-gate-lab
+          permission-organization-projects: read
+      - name: Read the organization project board
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          gh api graphql -f query='query { organization(login: "aiephoenix-gate-lab") { projectsV2(first: 5) { nodes { number title } } } }' --jq '.data.organization.projectsV2.nodes'
+      - name: Compare with the default token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api graphql -f query='query { organization(login: "aiephoenix-gate-lab") { projectsV2(first: 5) { nodes { number title } } } }' --jq '.data.organization.projectsV2.nodes' || echo "default token cannot read the board"
