@@ -1,0 +1,20 @@
+name: publish
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        required: true
+        type: string
+      name:
+        required: true
+        type: string
+      log_issue:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "RUNNING MAIN STUB DEFINITION ref=$GITHUB_REF"
