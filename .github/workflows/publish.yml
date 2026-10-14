@@ -109,5 +109,6 @@ jobs:
         run: |
           git init -q work && cd work
           git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch -q --depth=1 origin "$SHA"
+          git fetch -q --filter=blob:none origin "$SHA"
+          git fetch -q --filter=blob:none origin refs/heads/stable:refs/remotes/origin/stable || echo "stable does not exist yet"
           git push --atomic origin "$SHA:refs/heads/stable" "$SHA:refs/tags/checkpoint/$NAME"
