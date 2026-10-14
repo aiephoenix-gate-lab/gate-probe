@@ -11,7 +11,6 @@ on:
         default: manual
 permissions:
   contents: read
-  statuses: write
 jobs:
   report:
     runs-on: ubuntu-latest
@@ -25,14 +24,16 @@ jobs:
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "rejected: sha is not a full commit id"; exit 1; }
           case "$EVENT" in pull_request|merge_group|manual) ;; *) echo "rejected: unknown event"; exit 1;; esac
           echo "RUNNING GITHUB-GATE DEFINITION ref=$GITHUB_REF event_input=$EVENT"
-      - name: Secret visibility
+      - name: Mint report identity token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      - name: Report status on target commit as the report identity
         env:
-          PROBE_SECRET: ${{ secrets.PROBE_SECRET }}
-        run: echo "secret_length=${#PROBE_SECRET}"
-      - name: Report status on target commit
-        env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           SHA: ${{ inputs.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=gate/track \
-            -f description="reported by github-gate run $GITHUB_RUN_ID"
+            -f description="reported by report identity, run $GITHUB_RUN_ID"
