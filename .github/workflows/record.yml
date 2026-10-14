@@ -1,0 +1,22 @@
+name: record
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: record-${{ inputs.track }}
+  cancel-in-progress: false
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Simulate a record pass
+        env:
+          TRACK: ${{ inputs.track }}
+        run: |
+          [[ "$TRACK" =~ ^[a-z0-9-]+$ ]] || { echo "rejected: bad track"; exit 1; }
+          echo "RECORD PASS track=$TRACK run=$GITHUB_RUN_ID"; sleep 45
