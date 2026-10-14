@@ -72,7 +72,8 @@ jobs:
           [ -n "$approver" ] || { echo "rejected: no approval record"; exit 1; }
           [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ] || { echo "rejected: the confirmation note is empty"; exit 1; }
           echo "approver=$approver" >> "$GITHUB_OUTPUT"
-          { echo "note<<NOTE_END"; printf '%s\n' "$note"; echo "NOTE_END"; } >> "$GITHUB_OUTPUT"
+          delim="NOTE_$(openssl rand -hex 16)"
+          { echo "note<<$delim"; printf '%s\n' "$note"; echo "$delim"; } >> "$GITHUB_OUTPUT"
       - name: Mint publish identity token
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510

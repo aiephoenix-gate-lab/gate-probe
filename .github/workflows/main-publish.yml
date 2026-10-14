@@ -42,6 +42,7 @@ jobs:
           candidate=$(git rev-parse HEAD)
           git push -q --force origin "$candidate:refs/heads/candidate/main-pr-$PR"
           echo "base=$base head=$head candidate=$candidate"
+          { echo "### Candidate awaiting confirmation"; echo; echo "- PR: #$PR"; echo "- main (expected base): \`$base\`"; echo "- PR head: \`$head\`"; echo "- Candidate: \`$candidate\`"; } >> "$GITHUB_STEP_SUMMARY"
           { echo "base=$base"; echo "head=$head"; echo "candidate=$candidate"; } >> "$GITHUB_OUTPUT"
   report:
     needs: build
@@ -77,7 +78,8 @@ jobs:
           [ -n "$approver" ] || { echo "rejected: no approval record"; exit 1; }
           [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ] || { echo "rejected: the confirmation note is empty"; exit 1; }
           echo "approver=$approver" >> "$GITHUB_OUTPUT"
-          { echo "note<<NOTE_END"; printf '%s\n' "$note"; echo "NOTE_END"; } >> "$GITHUB_OUTPUT"
+          delim="NOTE_$(openssl rand -hex 16)"
+          { echo "note<<$delim"; printf '%s\n' "$note"; echo "$delim"; } >> "$GITHUB_OUTPUT"
       - name: Mint publish identity token
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
@@ -95,12 +97,15 @@ jobs:
           B: ${{ needs.build.outputs.base }}
           H: ${{ needs.build.outputs.head }}
           C: ${{ needs.build.outputs.candidate }}
+          PR: ${{ inputs.pr }}
         run: |
           for v in "$B" "$H" "$C"; do [[ "$v" =~ ^[0-9a-f]{40}$ ]] || { echo "rejected: bad commit id"; exit 1; }; done
           git init -q work && cd work
           git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch -q origin "$B" "$H" "$C" refs/heads/main:refs/remotes/origin/main
           [ "$(git rev-parse origin/main)" = "$B" ] || { echo "stopped: main moved since the candidate was built"; exit 1; }
+          now_head=$(GH_TOKEN="$TOKEN" gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .head.sha)
+          [ "$now_head" = "$H" ] || { echo "stopped: the PR head changed after the candidate was built"; exit 1; }
           [ "$(git rev-list --parents -n1 "$C")" = "$C $B $H" ] || { echo "rejected: candidate parents are not main and the PR head"; exit 1; }
           [ "$(git merge-tree --write-tree "$B" "$H")" = "$(git rev-parse "$C^{tree}")" ] || { echo "rejected: candidate tree is not the merge of main and the PR head"; exit 1; }
           echo "candidate verified: parents and tree match"
