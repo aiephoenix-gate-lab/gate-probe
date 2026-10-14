@@ -1,0 +1,18 @@
+name: gate
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        required: true
+        type: string
+      event:
+        required: false
+        type: string
+        default: manual
+permissions:
+  contents: read
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "RUNNING MAIN STUB DEFINITION ref=$GITHUB_REF"

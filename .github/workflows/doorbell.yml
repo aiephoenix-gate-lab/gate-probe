@@ -1,0 +1,21 @@
+name: doorbell
+on:
+  pull_request:
+    branches: ['integration/**']
+  merge_group:
+    branches: ['integration/**']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  ring:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch gate on github-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}
+        run: |
+          echo "event=$EVENT ref=$GITHUB_REF sha=$SHA"
+          gh workflow run gate.yml --repo "$GITHUB_REPOSITORY" --ref github-gate -f sha="$SHA" -f event="$EVENT"
