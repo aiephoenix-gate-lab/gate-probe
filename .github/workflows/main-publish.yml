@@ -133,4 +133,5 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR: ${{ inputs.pr }}
           OUTCOME: ${{ job.status }}
-        run: gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="Publication outcome: $OUTCOME (run $GITHUB_RUN_ID)" --jq .html_url
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="Publication outcome: $OUTCOME (run $GITHUB_RUN_ID)" --jq .html_url
