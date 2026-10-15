@@ -33,7 +33,7 @@ jobs:
           git init -q work && cd work
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch -q --filter=blob:none origin 'refs/heads/main:refs/remotes/origin/main' 'refs/heads/integration/*:refs/remotes/origin/integration/*' 'refs/tags/omne/gate/*:refs/tags/omne/gate/*'
-          stable_listing=$(git ls-remote origin refs/heads/stable)
+          stable_listing=$(git ls-remote origin refs/heads/stable | awk '$2=="refs/heads/stable"{print $1}')
           if [ -n "$stable_listing" ]; then git fetch -q --filter=blob:none origin 'refs/heads/stable:refs/remotes/origin/stable'; fi
           cutoff=$(( $(date -u +%s) - 1800 ))
           gaps=0

@@ -74,8 +74,7 @@ jobs:
               mode=fast-forward ;;
             *) echo "rejected: base branch $base_ref is not a trunk"; exit 1 ;;
           esac
-          listing=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$base_ref")
-          base=$(printf '%s\n' "$listing" | awk 'NF{print $1}')
+          base=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$base_ref" | awk -v r="refs/heads/$base_ref" '$2==r{print $1}')
           base=${base:-none}
           {
             echo "### Publication awaiting confirmation"
@@ -149,7 +148,7 @@ jobs:
           git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch -q --no-tags origin "$H" "refs/heads/main:refs/remotes/origin/main"
           git fetch -q origin 'refs/tags/omne/gate/*:refs/tags/omne/gate/*'
-          now_base=$(git ls-remote origin "refs/heads/$BASE_REF" | cut -f1); now_base=${now_base:-none}
+          now_base=$(git ls-remote origin "refs/heads/$BASE_REF" | awk -v r="refs/heads/$BASE_REF" '$2==r{print $1}'); now_base=${now_base:-none}
           [ "$now_base" = "$B" ] || { echo "stopped: $BASE_REF moved since dispatch"; exit 1; }
           [ "$B" = none ] || git fetch -q --no-tags origin "$B"
 
@@ -237,7 +236,8 @@ jobs:
           cd work
           expect=$B; [ "$expect" = none ] && expect=
           git push --atomic --force-with-lease="refs/heads/$BASE_REF:$expect" origin "$C:refs/heads/$BASE_REF" "refs/tags/$TAG:refs/tags/$TAG"
-          [ "$(git ls-remote origin "refs/heads/$BASE_REF" | cut -f1)" = "$C" ] || { echo "push reported success but $BASE_REF is not $C"; exit 1; }
+          after=$(git ls-remote origin "refs/heads/$BASE_REF" | awk -v r="refs/heads/$BASE_REF" '$2==r{print $1}')
+          [ "$after" = "$C" ] || { echo "push reported success but $BASE_REF is not $C"; exit 1; }
           echo "published $BASE_REF = $C"
 
       - name: Record the outcome
