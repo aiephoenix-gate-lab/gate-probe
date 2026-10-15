@@ -91,6 +91,7 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-issues: write
+          permission-pull-requests: write
 
       - name: Create the branch and the start tag in one atomic push
         env:
