@@ -283,7 +283,6 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
-          permission-workflows: write
 
       - name: Build and verify the result without executing repository content
         id: build
