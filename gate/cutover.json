@@ -1,4 +1,6 @@
 {
   "main": "59aa9ecccaea9862c6bc7c0e40d409325000cd3a",
-  "integration/alpha": "26506e9b868e033546825e6ef755b42bdecde2c7"
+  "integration/alpha": "26506e9b868e033546825e6ef755b42bdecde2c7",
+  "integration/a1-r1": "0bbae388b413c7ec6b264b27025f3028f0c6e60c",
+  "integration/old-r1": "59aa9ecccaea9862c6bc7c0e40d409325000cd3a"
 }
