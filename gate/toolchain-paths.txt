@@ -1,3 +1,63 @@
-# Lab: protected repository toolchain paths (git glob pathspec, one per line).
-tools/**
-toolchain.txt
+# Repository toolchain paths (git glob pathspec, one per line; `*` stays within a
+# directory, `**` crosses directories). A PR from a personal branch into a track that
+# changes any of these needs a second confirmation in `repo-toolchain-review`.
+# Source: #290 implementation plan, appendix; updated for the files that exist after #310.
+# This list is read from github-gate only. Changing it is an admin change to github-gate.
+
+# Build and test orchestration
+turbo.json
+package.json
+# The whole file is protected, including product dependency versions in the catalog.
+# The checker packages are pinned in its catalog (RFC-0008), so this entry stays whole.
+pnpm-workspace.yaml
+# The lockfile records what the pins resolve to; a lockfile-only change can swap the
+# installed checker, so it is protected with the pins.
+pnpm-lock.yaml
+# #390 retired the Makefile; the root package.json scripts call these entry scripts.
+scripts/check.sh
+scripts/check-design.sh
+scripts/metrics.sh
+scripts/slot-unless-plan-only.sh
+scripts/test-tier.sh
+scripts/with-test-slot.sh
+scripts/with-test-slot.mjs
+scripts/git-environment.sh
+vitest.tiers.mts
+
+# Types, lint and format
+tsconfig*.json
+.oxlintrc.json
+.oxfmtrc.json
+.editorconfig
+scripts/format.sh
+scripts/pre-commit-format
+scripts/install-format-hook.sh
+scripts/test-formatting.sh
+
+# Dependency rules
+.dependency-cruiser.cjs
+knip.json
+docs/architecture/constraints.json
+
+# Checkers and presets
+# #332 split tools/ts-checks into the published repo-toolchain and three unpublished
+# members, and deleted tools/core-verification.
+tools/repo-toolchain/**
+tools/product-checks/**
+tools/dev-flow/**
+tools/test-runner/**
+repo-toolchain.config.json
+tools/repo-config/**
+
+# Documentation, design and agent checks
+tools/spec-tools/**
+pyproject.toml
+uv.lock
+.meta_harness/tooling/**
+
+# Delivery and integration configuration
+docs/engineering/integration-policy.json
+docs/engineering/github-delivery.json
+
+# CI definitions in the repository tree (the real flows live on github-gate)
+.github/workflows/**
